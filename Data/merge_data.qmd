@@ -1,0 +1,99 @@
+---
+title: "Merge_data"
+author: "Matthew Ayala"
+format: html
+editor: visual
+---
+
+Packages
+
+```{r}
+library(tidyverse)
+library(here)
+library(glue)
+library(lubridate)
+library(stringr)
+```
+
+Load in datasets
+
+```{r}
+today <- Sys.Date()
+
+schedule <- read_rds(here(glue("Data/schedule_results/{today}/{today}_schedule.rds")))
+
+```
+
+Need to bind ratings and team stats to the day of that game.
+
+First I need to fix the date columns so they are easier to work with...
+
+```{r}
+
+schedule <- schedule %>% 
+  mutate(date = str_split(date,",",2, simplify = TRUE))
+
+schedule <- schedule %>% 
+  mutate(date = schedule[,1][,2])
+
+schedule <- schedule %>% 
+  mutate(date = mdy(date)) %>% 
+  filter(date >= ymd("2022-11-07"))
+
+
+```
+
+Put team_stats and ratings for that day into the master list.
+
+```{r}
+file_names <- list.files(here("Data/schedule_results/"))
+master_list <- list()
+combined_dfs <- list()
+
+
+
+for (i in file_names) {
+  teamstats <- read_rds((here(glue("Data/schedule_results/{i}/{i}_teamstats.rds")))) %>% 
+    mutate(date = i) %>% 
+    relocate(date)
+  
+  ratings <- read_rds((here(glue("Data/schedule_results/{i}/{i}_ratings.rds"))))
+
+  
+  rate_n_stats <- inner_join(teamstats,ratings, by = "team")
+  
+  both <- list()
+
+  both$team_stats <- teamstats
+  both$ratings <- ratings
+  both$combined <- rate_n_stats
+  
+  master_list[[i]] <- both
+  combined_dfs[[i]] <- rate_n_stats
+  
+}
+
+master_df <- bind_rows(combined_dfs) %>% 
+  mutate(date = ymd(date))
+
+```
+
+Bind the team_stats and ratings for the days game into the schedule data frame.
+
+```{r}
+
+final_df <- schedule %>% 
+  left_join(master_df, by = c("away" = "team", "date" = "date"))
+
+final_df <- final_df %>% 
+  left_join(master_df, by = c("home" = "team", "date" = "date"),
+            suffix = c("_away","_home"))
+  
+
+```
+
+Save final dateframe.
+
+```{r}
+saveRDS(final_df, here(glue("Data/schedule_results/{today}/{today}_final_df.rds")))
+```

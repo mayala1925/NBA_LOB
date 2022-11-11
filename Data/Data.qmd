@@ -1,0 +1,170 @@
+---
+title: "Data"
+format: html
+editor: visual
+---
+
+Packages
+
+```{r}
+#| echo: false
+library(tidyverse)
+library(markdown)
+library(here)
+library(filesstrings)
+library(glue)
+library(rvest)
+library(stringr)
+
+```
+
+Load in schedule results .csv from basketball reference for todays date.
+
+```{r}
+
+today <- Sys.Date()
+schedule_path <- "Data/schedule_results/today.csv"
+
+```
+
+```{r}
+months <- c("october","november")
+
+col_names <- c("date","start",
+               "away", "away_pts",
+               "home","home_pts",
+               "attend","arena")
+
+sched_df <- list()
+
+# Go through each month and grab latest schedule data.
+
+for (i in months) {
+      url_month <- glue("https://www.basketball-reference.com/leagues/NBA_2023_games-{i}.html")
+      
+      url <- read_html(url_month)
+      
+      url_trs <- url %>% 
+      html_nodes("tr") %>% 
+      html_text2()
+      
+      scores <- str_split(url_trs[-1],fixed("\t"))
+      scores <- lapply(scores, '[', c(1:6,9:10))
+      
+      schedule_scores <- do.call(rbind.data.frame, scores)
+      colnames(schedule_scores) <- col_names
+      
+      sched_df[[i]] <- schedule_scores
+      
+      
+  }
+
+final_df <- bind_rows(sched_df)
+
+```
+
+Creating a winner column - This is going to be the final, up to date schedule results.
+
+```{r}
+final_df <- final_df %>% 
+  mutate(winner = if_else(home_pts > away_pts,home,away))
+
+
+```
+
+Pulling NBA team ratings for the day. - This will be the most up to date ratings
+
+```{r}
+rating_url <- read_html("https://www.basketball-reference.com/leagues/NBA_2023_ratings.html")
+
+rating_trs <- rating_url %>% 
+  html_nodes("tr") %>% 
+  html_text2()
+
+ratings <- str_split(rating_trs[-c(1,2)],fixed("\t"))
+ratings <- lapply(ratings, '[', c(2,5:15))
+
+ratings_df <- do.call(rbind.data.frame, ratings)
+colnames(ratings_df) <- c("team","wins",
+                          "loss","win_loss_percentage",
+                          "mov","ortg",
+                          "drtg","nrtg",
+                          "mov_a","ortg_a",
+                          "drtg_a","nrtg_a")
+
+
+
+
+
+```
+
+Pulling team per game stats.
+
+```{r}
+team_url <- read_html("https://www.basketball-reference.com/leagues/NBA_2023.html#per_game-team")
+team_trs <- team_url %>% 
+  html_nodes("tr") %>% 
+  html_text2()
+
+team_trs <- team_trs[74:103]
+team_stats <- str_split(team_trs,fixed("\t"))
+team_stats <- lapply(team_stats, '[', c(2:25))
+team_stats_df <- do.call(rbind.data.frame, team_stats)
+colnames(team_stats_df) <- c("team","games",
+                          "minutes","fg",
+                          "fg_attempts","fg_percentage",
+                          "threes","threes_attempts",
+                          "three_percentage","twos",
+                          "twos_attempts","two_percentage",
+                          "ft","ft_attempts",
+                          "ft_percentage","orb",
+                          "drb","trb",
+                          "assist","steals",
+                          "blocks","turnover",
+                          "personal_fouls","total_pts")
+
+
+
+
+```
+
+This section is attempting to get opponents stats against teams but I can't figure it out right now.
+
+```{r, eval=FALSE}
+opp_url <- read_html("https://www.basketball-reference.com/leagues/NBA_2023.html#all_per_game_team-opponent")
+opp_trs <- opp_url %>% 
+  html_nodes("tr") %>% 
+  html_text2()
+
+opp_trs <- opp_trs[74:103]
+opp_team_stats <- str_split(opp_trs,fixed("\t"))
+opp_team_stats <- lapply(opp_team_stats, '[', c(2:25))
+opp_team_stats_df <- do.call(rbind.data.frame, opp_team_stats)
+colnames(opp_team_stats_df) <- c("team","games",
+                          "minutes","fg",
+                          "fg_attempts","fg_percentage",
+                          "threes","threes_attempts",
+                          "three_percentage","twos",
+                          "twos_attempts","two_percentage",
+                          "ft","ft_attempts",
+                          "ft_percentage","orb",
+                          "drb","trb",
+                          "assist","steals",
+                          "blocks","turnover",
+                          "personal_fouls","total_pts")
+```
+
+Saving and organizing files.
+
+```{r}
+dir.create(here(gsub("today.csv",today,schedule_path)))
+
+#Saving the most recent schedule.
+saveRDS(final_df, here(glue("Data/schedule_results/{today}/{today}_schedule.rds")))
+
+saveRDS(ratings_df,here(glue("Data/schedule_results/{today}/{today}_ratings.rds")))
+
+saveRDS(team_stats_df,here(glue("Data/schedule_results/{today}/{today}_teamstats.rds")))
+
+
+```
